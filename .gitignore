@@ -1,0 +1,11 @@
+node_modules/
+dist/
+functions/lib/
+functions/node_modules/
+.netlify/
+.env
+.env.*
+!.env.example
+firebase-debug.log
+firestore-debug.log
+storage-debug.log

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f9fe" />
+  <meta name="description" content="SmartMed помогает помнить о расписании лекарств и вести историю подтверждений." />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <title>SmartMed — забота по расписанию</title>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#home"><img class="brand-icon" src="/icon.svg" alt=""><span><b>SmartMed</b><small>Забота по расписанию</small></span></a>
+      <div class="side-label">МЕНЮ</div>
+      <nav class="side-nav" aria-label="Основная навигация">
+        <button class="nav-item active" data-page="home"><span>⌂</span>Сегодня</button>
+        <button class="nav-item" data-page="history"><span>◷</span>История</button>
+        <button class="nav-item" data-page="stats"><span>▥</span>Статистика</button>
+        <button class="nav-item" data-page="settings"><span>⚙</span>Настройки</button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="privacy-card"><span>✦</span><b>Ваше здоровье — ваше дело</b><p>Данные хранятся на этом устройстве.</p></div>
+      <button class="profile-shortcut" data-page="settings"><span class="avatar" id="avatarSmall">С</span><span><b id="profileNameSmall">Мой профиль</b><small>Локальный профиль</small></span><span class="more">···</span></button>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div class="mobile-brand"><img class="brand-icon" src="/icon.svg" alt=""><b>SmartMed</b></div><div class="topbar-date" id="topDate"></div><button class="icon-button" id="notificationButton" aria-label="Включить уведомления" title="Уведомления">♧<i id="notificationDot"></i></button></header>
+      <div id="syncConflictBanner"></div>
+      <section id="page-home" class="page active"></section>
+      <section id="page-history" class="page"></section>
+      <section id="page-stats" class="page"></section>
+      <section id="page-settings" class="page"></section>
+    </main>
+  </div>
+  <nav class="mobile-nav" aria-label="Основная навигация"><button class="active" data-page="home"><span>⌂</span>Сегодня</button><button data-page="history"><span>◷</span>История</button><button data-page="stats"><span>▥</span>Статистика</button><button data-page="settings"><span>⚙</span>Настройки</button></nav>
+  <div id="modalRoot"></div><div id="toast" class="toast" role="status"></div>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>
