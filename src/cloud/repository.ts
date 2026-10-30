@@ -1,6 +1,6 @@
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile, type User } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, onSnapshot, runTransaction, setDoc, writeBatch, type DocumentData } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadString } from 'firebase/storage';
+import { deleteObject, getDownloadURL, ref } from 'firebase/storage';
 import { auth, firebaseReady, firestore, storage } from './firebaseClient';
 import type { AppData, ScheduledDose } from '../domain/types';
 import { defaultData } from '../storage/localStore';
@@ -48,15 +48,9 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
-async function doseForCloud(uid: string, dose: ScheduledDose): Promise<{ id: string; [key: string]: unknown }> {
+function doseForCloud(dose: ScheduledDose): { id: string; [key: string]: unknown } {
   const { photo, ...fields } = dose;
-  let photoPath = dose.photoPath;
-  if (photo?.startsWith('data:image/') && storage && !photoPath) {
-    photoPath ||= `users/${uid}/dose-photos/${dose.id}.jpg`;
-    await uploadString(ref(storage, photoPath), photo, 'data_url', { contentType: 'image/jpeg' });
-    dose.photoPath = photoPath;
-  }
-  return { ...fields, id: dose.id, scheduledAt: dose.scheduledAt || utcTimestampForLocalSchedule(dose.day,dose.time), ...(photoPath ? { photoPath } : {}) };
+  return { ...fields, id: dose.id, scheduledAt: dose.scheduledAt || utcTimestampForLocalSchedule(dose.day,dose.time) };
 }
 
 export async function readCloudData(uid: string): Promise<AppData | null> {
@@ -95,7 +89,7 @@ export async function writeCloudData(uid: string, data: AppData): Promise<void> 
   });
   try {
     await setDoc(profileRef, { ...data.profile, id: uid, schemaVersion: 2 }, { merge: true });
-    const cloudDoses = await Promise.all(data.doses.map(dose => doseForCloud(uid, dose)));
+    const cloudDoses = data.doses.map(doseForCloud);
     await Promise.all([
       writeCollection(uid, 'medications', data.meds.map(med => ({ ...med, id: med.id, userId: uid }))),
       writeCollection(uid, 'scheduledDoses', cloudDoses.map(dose => ({ ...dose, userId: uid })))

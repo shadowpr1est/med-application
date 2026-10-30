@@ -11,8 +11,15 @@ let cloudConflict = null;
 let localEditRevision = 0, localChangesPending = false;
 let cloudRuntimePromise = null;
 let cloudUnsubscribe = null, cloudAction = false;
+let appUnlocked = !firebaseReady, guestMode = false;
 function cloudRuntime() { cloudRuntimePromise ||= import('./cloud/runtime'); return cloudRuntimePromise; }
-function watchAccount(user) { if(cloudUnsubscribe)cloudUnsubscribe();cloudRuntime().then(api=>{cloudUnsubscribe=api.watchCloudRevision(user.uid,async()=>{try{const remote=await api.readCloudData(user.uid);if(remote){if(localChangesPending){cloudConflict=remote;render();toast('Данные изменились на другом устройстве. Выберите версию в уведомлении сверху.');return;}data=remote;localChangesPending=false;saveData(data);ensureDoses();render();}}catch{toast('Не удалось обновить облачные данные');}},()=>toast('Потеряно соединение с облачной синхронизацией'));}); }
+function withLocalPhotos(remote) {
+ const photos=new Map(data.doses.filter(dose=>dose.photo).map(dose=>[dose.id,dose.photo]));
+ const profile={...remote.profile};
+ if(profile.name==='Саша')profile.name='';
+ return {...remote,profile,doses:remote.doses.map(dose=>({...dose,photo:dose.photo||photos.get(dose.id)||null}))};
+}
+function watchAccount(user) { if(cloudUnsubscribe)cloudUnsubscribe();cloudRuntime().then(api=>{cloudUnsubscribe=api.watchCloudRevision(user.uid,async()=>{try{const remote=await api.readCloudData(user.uid);if(remote){if(localChangesPending){cloudConflict=withLocalPhotos(remote);render();toast('Данные изменились на другом устройстве. Выберите версию в уведомлении сверху.');return;}data=withLocalPhotos(remote);localChangesPending=false;saveData(data);ensureDoses();render();}}catch{toast('Не удалось обновить облачные данные');}},()=>toast('Потеряно соединение с облачной синхронизацией'));}); }
 let page = 'home', historyRange = 'week', historyFilter = 'all', timer = null;
 let modalTrigger = null, cameraStream = null;
 const $ = (s, root = document) => root.querySelector(s);
@@ -41,7 +48,7 @@ window.addEventListener('online',()=>{if(cloudUser&&localChangesPending)schedule
 function atDate(key, time) { const [y,m,d] = key.split('-').map(Number), [h,min] = time.split(':').map(Number); return new Date(y,m-1,d,h,min); }
 function fmtDate(date, opts = { weekday:'long', day:'numeric', month:'long' }) { return new Intl.DateTimeFormat('ru-RU', opts).format(date); }
 function fmtTime(date) { return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(date); }
-function initials(name) { return (name || 'С').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase(); }
+function initials(name) { return (name || 'П').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase(); }
 function notificationPermission() { return 'Notification' in window ? Notification.permission : 'unsupported'; }
 function toast(message) { const el=$('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.classList.remove('show'),3000); }
 function friendlyError(error, fallback) {
@@ -74,9 +81,46 @@ function doseState(dose) {
   return ['Ожидается','pending'];
 }
 function todayDoses() { ensureDoses(); return data.doses.filter(x=>x.day===dateKey() && medFor(x)).sort((a,b)=>a.time.localeCompare(b.time)); }
-function pageNav(next) { page=next; document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`)); document.querySelectorAll('[data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===page)); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function pageNav(next) { page=next; document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`)); document.querySelectorAll('[data-page]').forEach(x=>{const active=x.dataset.page===page;x.classList.toggle('active',active);if(active)x.setAttribute('aria-current','page');else x.removeAttribute('aria-current');}); render(); window.scrollTo({top:0,behavior:'smooth'}); }
 document.addEventListener('click', e=>{const nav=e.target.closest('[data-page]'); if(nav) pageNav(nav.dataset.page);});
-function render() { $('#topDate').textContent=fmtDate(new Date(),{day:'numeric',month:'long',year:'numeric'}); $('#profileNameSmall').textContent=data.profile.name||'Мой профиль'; $('#avatarSmall').textContent=initials(data.profile.name); if(page==='home') renderHome(); if(page==='history') renderHistory(); if(page==='stats') renderStats(); if(page==='settings') renderSettings(); $('#notificationDot').classList.toggle('enabled', data.settings.notifications && notificationPermission()==='granted');renderSyncConflict(); }
+function render() { if(!appUnlocked)return;$('#appRoot').hidden=false;$('#authGate').hidden=true;$('#topDate').textContent=fmtDate(new Date(),{day:'numeric',month:'long',year:'numeric'}); $('#profileNameSmall').textContent=data.profile.name||'Мой профиль'; $('#avatarSmall').textContent=initials(data.profile.name);$('#profileScope').textContent=cloudUser?'Облачный аккаунт':'Только на этом устройстве';$('#privacyDescription').textContent=cloudUser?'Расписание синхронизируется; фото хранятся на устройстве.':'Данные хранятся на этом устройстве.'; if(page==='home') renderHome(); if(page==='history') renderHistory(); if(page==='stats') renderStats(); if(page==='settings') renderSettings(); $('#notificationDot').classList.toggle('enabled', data.settings.notifications && notificationPermission()==='granted');renderSyncConflict(); }
+function showAuthGate(mode='login', message='') {
+ appUnlocked=false;guestMode=false;$('#appRoot').hidden=true;
+ const host=$('#authGate');host.hidden=false;
+ if(!firebaseReady){host.innerHTML=`<div class="auth-card"><div class="auth-brand"><img src="/icon.svg" alt=""><span><b>SmartMed</b><small>Забота по расписанию</small></span></div><h1>Начните вести расписание</h1><p class="muted">Можно пользоваться приложением без аккаунта. Данные и фотографии останутся в этом браузере.</p><button class="button primary auth-submit" data-auth-action="guest">Продолжить без аккаунта</button><p class="auth-note">Для входа и синхронизации настройте Firebase.</p></div>`;return;
+ }
+ const registering=mode==='register';
+ host.innerHTML=`<div class="auth-card"><div class="auth-brand"><img src="/icon.svg" alt=""><span><b>SmartMed</b><small>Забота по расписанию</small></span></div><h1>${registering?'Создать аккаунт':'Войти в SmartMed'}</h1><p class="muted">${registering?'Создайте аккаунт, чтобы сохранять расписание в облаке.':'Войдите, чтобы открыть своё расписание и отметки.'}</p>${message?`<p class="auth-error" role="alert">${esc(message)}</p>`:''}<form id="authForm" class="settings-fields">${registering?`<label class="field">Как к вам обращаться<input name="name" maxlength="60" autocomplete="name" required></label>`:''}<label class="field">Электронная почта<input name="email" type="email" autocomplete="email" required></label><label class="field">Пароль<input name="password" type="password" minlength="${registering?6:1}" autocomplete="${registering?'new-password':'current-password'}" required></label><button class="button primary auth-submit" type="submit">${registering?'Создать аккаунт':'Войти'}</button></form><div class="auth-links"><button class="text-button" data-auth-action="mode" data-mode="${registering?'login':'register'}">${registering?'Уже есть аккаунт? Войти':'Нет аккаунта? Зарегистрироваться'}</button>${registering?'':`<button class="text-button" data-auth-action="reset">Забыли пароль?</button>`}</div><div class="auth-divider"><span>или</span></div><button class="button secondary auth-submit" data-auth-action="guest">Продолжить без аккаунта</button><p class="auth-note">Гостевые данные сохраняются только на этом устройстве.</p></div>`;
+}
+$('#authGate').addEventListener('click',async event=>{
+ const button=event.target.closest('[data-auth-action]');if(!button)return;
+ if(button.dataset.authAction==='mode'){showAuthGate(button.dataset.mode);return;}
+ if(button.dataset.authAction==='guest'){guestMode=true;appUnlocked=true;render();return;}
+ if(button.dataset.authAction==='reset'){const email=$('#authForm [name="email"]').value.trim();if(!email){showAuthGate('login','Сначала укажите email, затем нажмите «Забыли пароль?»');return;}try{const api=await cloudRuntime();await api.sendPasswordReset(email);showAuthGate('login','Ссылка для сброса пароля отправлена на почту.');}catch(error){showAuthGate('login',friendlyError(error,'Не удалось отправить ссылку для сброса пароля.'));}}
+});
+$('#authGate').addEventListener('submit',async event=>{
+ if(event.target.id!=='authForm')return;
+ event.preventDefault();
+ const form=event.target,values=new FormData(form),registering=form.querySelector('[name="name"]')!==null;
+ const submit=form.querySelector('[type="submit"]');if(submit)submit.disabled=true;
+ cloudAction=true;
+ try{
+  const api=await cloudRuntime();
+  if(registering){
+   const user=await api.registerAndUpload(String(values.get('email')).trim(),String(values.get('password')),String(values.get('name')).trim(),data);
+   cloudUser=user;
+  }else{
+   const result=await api.signInAndDownload(String(values.get('email')).trim(),String(values.get('password')),data);
+   cloudUser=result.user;data=withLocalPhotos(result.data);
+  }
+  guestMode=false;appUnlocked=true;saveData(data);ensureDoses();watchAccount(cloudUser);render();toast(registering?'Аккаунт создан, расписание синхронизируется':'Вы вошли в аккаунт');
+ }catch(error){
+  let message=friendlyError(error,registering?'Не удалось создать аккаунт':'Не удалось войти');
+  try{const api=await cloudRuntime();if(api.auth?.currentUser)await api.signOutCloud();}
+  catch(signOutError){console.error('Не удалось завершить Firebase-сессию после ошибки входа.',signOutError);message+=' Не удалось завершить сессию; обновите страницу и попробуйте снова.';}
+  showAuthGate(registering?'register':'login',message);
+ }finally{cloudAction=false;}
+});
 function renderSyncConflict() { const host=$('#syncConflictBanner');if(!host)return;if(!cloudConflict){host.innerHTML='';return;}host.innerHTML=`<section class="sync-conflict" role="alert"><b>Есть изменения с другого устройства</b><p>Локальные правки сохранены. Загрузите облачную версию или подтвердите запись текущей версии поверх облачной.</p><div><button class="button secondary small" data-action="use-cloud-version">Загрузить облачную версию</button><button class="button primary small" data-action="keep-local-version">Оставить мою версию</button></div></section>`; }
 
 function renderHome() {
@@ -139,7 +183,7 @@ document.addEventListener('click', async e=>{
  if(a==='set-range') {historyRange=b.dataset.value;renderHistory();}
  if(a==='filter-history') {historyFilter=b.dataset.value;renderHistory();}
  if(a==='enable-notifications') enableNotifications();
- if(a==='cloud-signout') { try { await flushCloudWrite();cloudAction=true;const api=await cloudRuntime();await api.signOutCloud();cloudUser=null;localChangesPending=false;if(cloudUnsubscribe)cloudUnsubscribe();cloudUnsubscribe=null;localStorage.removeItem(STORAGE_KEY);data=structuredClone(defaultData);render();toast('Вы вышли. Облачные данные сохранены в аккаунте.'); } catch { toast('Не удалось выйти из аккаунта'); } finally {cloudAction=false;} }
+ if(a==='cloud-signout') { try { await flushCloudWrite();cloudAction=true;const api=await cloudRuntime();await api.signOutCloud();cloudUser=null;localChangesPending=false;if(cloudUnsubscribe)cloudUnsubscribe();cloudUnsubscribe=null;localStorage.removeItem(STORAGE_KEY);data=structuredClone(defaultData);showAuthGate('login','Вы вышли из аккаунта. Облачные данные сохранены.');toast('Вы вышли из аккаунта'); } catch(error) { toast(friendlyError(error,'Не удалось выйти из аккаунта')); } finally {cloudAction=false;} }
  if(a==='enable-cloud-push'&&cloudUser) { try { const api=await cloudRuntime();await api.registerPushDevice(cloudUser.uid);toast('Push-уведомления включены на этом устройстве'); } catch(error) { toast(friendlyError(error,'Не удалось включить push')); } }
  if(a==='install') installApp();
 });
@@ -199,7 +243,7 @@ function openDeleteAccountModal() {
   const password=new FormData(event.currentTarget).get('password');
   try{
    if(cloudSaveTimer){clearTimeout(cloudSaveTimer);cloudSaveTimer=null;}await cloudWriteChain;cloudAction=true;const api=await cloudRuntime();await api.reauthenticateAndDeleteAccount(password);
-   if(cloudUnsubscribe)cloudUnsubscribe();cloudUnsubscribe=null;cloudUser=null;data=structuredClone(defaultData);saveData(data);closeModal();pageNav('home');toast('Аккаунт и облачные данные удалены');
+   if(cloudUnsubscribe)cloudUnsubscribe();cloudUnsubscribe=null;cloudUser=null;data=structuredClone(defaultData);saveData(data);closeModal();showAuthGate('login','Аккаунт и облачные данные удалены');toast('Аккаунт и облачные данные удалены');
   }catch(error){toast(friendlyError(error,'Не удалось удалить аккаунт'));}
   finally{cloudAction=false;}
  };
@@ -212,7 +256,7 @@ function renderStats() {ensureDoses();const now=new Date(),since=new Date(now.ge
 function renderSettings() {const cloudPanel=!firebaseReady?`<section class="panel settings-panel"><div class="panel-title"><span class="summary-icon green">☁</span><div><h2>Облачный аккаунт</h2><p>Пока работает локальное хранение на устройстве</p></div></div><div class="inline-note">Чтобы включить регистрацию и синхронизацию, настройте Firebase Web App по файлу .env.example. Локальные функции доступны и без облака.</div></section>`:cloudUser?`<section class="panel settings-panel"><div class="panel-title"><span class="summary-icon green">☁</span><div><h2>Аккаунт и синхронизация</h2><p>Данные синхронизируются с Firebase</p></div></div><div class="setting-row"><div><b>${esc(cloudUser.email||cloudUser.displayName||'Аккаунт SmartMed')}</b><small>Облачное хранение включено</small></div><button class="button secondary small" data-action="enable-cloud-push">Включить push</button><button class="button secondary small" data-action="cloud-signout">Выйти</button><button class="button danger-button small" data-action="delete-account">Удалить аккаунт</button></div><div class="inline-note">После выхода локальная копия будет удалена с этого устройства; данные аккаунта останутся в облаке. Удаление аккаунта удалит профиль и облачные данные.</div></section>`:`<section class="panel settings-panel"><div class="panel-title"><span class="summary-icon green">☁</span><div><h2>Аккаунт и синхронизация</h2><p>Данные можно хранить в Firebase и открывать на своих устройствах</p></div></div><form id="cloudRegisterForm" class="settings-fields"><label class="field">Имя<input name="name" value="${esc(data.profile.name)}" required maxlength="60"></label><label class="field">Электронная почта<input name="email" type="email" required autocomplete="email"></label><label class="field">Пароль<input name="password" type="password" required minlength="6" autocomplete="new-password"></label><button class="button primary" type="submit">Создать аккаунт и загрузить эти данные</button></form><details class="cloud-login"><summary>Уже есть аккаунт? Войти</summary><form id="cloudLoginForm" class="settings-fields"><label class="field">Электронная почта<input name="email" type="email" required autocomplete="email"></label><label class="field">Пароль<input name="password" type="password" required autocomplete="current-password"></label><button class="button secondary" type="submit">Войти и загрузить облачные данные</button></form><button class="text-button" type="button" id="cloudPasswordReset">Забыли пароль?</button></details><div class="inline-note">Пароль хранит Firebase Authentication. SmartMed не сохраняет его в локальных данных.</div></section>`;$('#page-settings').innerHTML=`<div class="page-heading"><div><div class="eyebrow">ВАШЕ ПРИЛОЖЕНИЕ</div><h1>Настройки</h1><p class="muted">Профиль, напоминания и доверенный человек.</p></div></div><div class="settings-layout"><div class="settings-main"><section class="panel settings-panel"><div class="panel-title"><span class="summary-icon green">♙</span><div><h2>Профиль</h2><p>Имя и часовой пояс устройства</p></div></div><form id="profileForm" class="settings-fields"><label class="field">Ваше имя<input name="name" value="${esc(data.profile.name)}" required maxlength="60"></label><label class="field">Часовой пояс<input value="${esc(data.profile.timezone)}" disabled><span class="field-hint">Определяется устройством</span></label><button class="button primary" type="submit">Сохранить профиль</button></form></section><section class="panel settings-panel"><div class="panel-title"><span class="summary-icon peach">♧</span><div><h2>Напоминания</h2><p>Локальные уведомления в этом браузере</p></div></div><div class="setting-row"><div><b>Разрешить уведомления</b><small id="notifyStatus">${notificationPermission()==='granted'?'Уведомления разрешены':notificationPermission()==='denied'?'Заблокированы в браузере':notificationPermission()==='unsupported'?'Не поддерживаются браузером':'Пока не включены'}</small></div><button class="button secondary small" data-action="enable-notifications">${notificationPermission()==='granted'?'Включено':'Включить'}</button></div><div class="settings-fields two-cols"><label class="field">Интервал повторного напоминания<select name="repeatMinutes" form="reminderForm">${[5,10,15,20,30].map(x=>`<option value="${x}" ${data.settings.repeatMinutes===x?'selected':''}>${x} минут</option>`).join('')}</select></label><label class="field">Количество повторов<select name="repeats" form="reminderForm">${[0,1,2,3,4].map(x=>`<option value="${x}" ${data.settings.repeats===x?'selected':''}>${x}</option>`).join('')}</select></label></div><label class="check-row"><input type="checkbox" name="allowNoPhoto" form="reminderForm" ${data.settings.allowNoPhoto?'checked':''}><span>Разрешить подтверждать приём без фото</span></label><form id="reminderForm"><button class="button primary" type="submit">Сохранить настройки</button></form><div class="inline-note">Напоминания браузера надёжны, пока SmartMed открыт. Для фоновых системных уведомлений нужен мобильный пакет или настроенный push-сервер.</div></section><section class="panel settings-panel"><div class="panel-title"><span class="summary-icon mint">♡</span><div><h2>Доверенный человек</h2><p>Контакт для уведомления, если приём не подтверждён</p></div></div><form id="contactForm" class="settings-fields"><label class="field">Имя<input name="name" maxlength="60" placeholder="Например, Анна" value="${esc(data.contact.name)}"></label><div class="settings-fields two-cols"><label class="field">Канал<select name="method"><option value="email" ${data.contact.method==='email'?'selected':''}>Электронная почта</option><option value="sms" ${data.contact.method==='sms'?'selected':''}>SMS</option></select></label><label class="field">Email или телефон<input name="value" value="${esc(data.contact.value)}" placeholder="name@example.com"></label></div><label class="check-row"><input type="checkbox" name="consent" ${data.contact.consent?'checked':''}><span>Человек согласен получать уведомления о неподтверждённых приёмах.</span></label><label class="check-row"><input type="checkbox" name="enabled" ${data.contact.enabled?'checked':''}><span>Включить напоминание о неподтверждённом приёме.</span></label><label class="field">Подождать до предложения связаться<select name="contactAfter">${[5,10,15,20,30,60].map(x=>`<option value="${x}" ${data.settings.contactAfter===x?'selected':''}>${x} минут после времени приёма</option>`).join('')}</select></label><button class="button primary" type="submit">Сохранить контакт</button><div class="inline-note">В локальном режиме откроется подготовленное письмо или SMS. При настроенном Firebase согласованное email-уведомление отправляется автоматически; SMS-отправка пока не подключена.</div></form></section><section class="panel settings-panel"><div class="panel-title"><span class="summary-icon rose">⌫</span><div><h2>Данные приложения</h2><p>Локальное хранилище этого устройства</p></div></div><p class="muted">Экспорт скачивает локальную копию профиля, расписания, истории и сохранённых в браузере фото. Фото, которые хранятся только в Firebase, в файл не включаются.</p><div class="settings-fields"><button class="button secondary" data-action="export-data">Скачать копию данных (JSON)</button><button class="button danger-button" data-action="clear-data">Удалить все локальные данные</button></div></section></div><aside class="settings-aside"><div class="privacy-card large"><span>✦</span><h3>Личное остаётся личным</h3><p>Профиль, расписание и история хранятся в браузере этого устройства. Не сохраняйте чувствительные данные на чужих устройствах.</p></div><div class="panel install-panel"><div class="summary-icon green">↓</div><h3>Установите SmartMed</h3><p>Добавьте приложение на главный экран для быстрого доступа.</p><button class="button secondary full-button" data-action="install">Установить приложение</button></div></aside></div>`;
  $('#profileForm').closest('.panel').insertAdjacentHTML('afterend',cloudPanel);
  $('#cloudRegisterForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);cloudAction=true;try{const api=await cloudRuntime();const user=await api.registerAndUpload(f.get('email').trim(),f.get('password'),f.get('name'),data);cloudUser=user;saveData(data);watchAccount(user);render();toast('Аккаунт создан, данные загружены в Firebase');}catch(error){toast(friendlyError(error,'Не удалось создать аккаунт'));}finally{cloudAction=false;}});
- $('#cloudLoginForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);cloudAction=true;try{const api=await cloudRuntime();const result=await api.signInAndDownload(f.get('email').trim(),f.get('password'),data);cloudUser=result.user;data=result.data;saveData(data);ensureDoses();watchAccount(result.user);render();toast(result.importedLocal?'Локальные данные добавлены в этот аккаунт':'Облачные данные загружены');}catch(error){toast(friendlyError(error,'Не удалось войти'));}finally{cloudAction=false;}});
+ $('#cloudLoginForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);cloudAction=true;try{const api=await cloudRuntime();const result=await api.signInAndDownload(f.get('email').trim(),f.get('password'),data);cloudUser=result.user;data=withLocalPhotos(result.data);saveData(data);ensureDoses();watchAccount(result.user);render();toast(result.importedLocal?'Локальные данные добавлены в этот аккаунт':'Облачные данные загружены');}catch(error){toast(friendlyError(error,'Не удалось войти'));}finally{cloudAction=false;}});
  $('#cloudPasswordReset')?.addEventListener('click',async()=>{const email=$('#cloudLoginForm [name=email]')?.value.trim();if(!email){toast('Введите email в форме входа');return;}try{const api=await cloudRuntime();await api.sendPasswordReset(email);toast('Ссылка для смены пароля отправлена на email');}catch(error){toast(friendlyError(error,'Не удалось отправить ссылку'));}});
  $('#profileForm').onsubmit=e=>{e.preventDefault();data.profile.name=new FormData(e.currentTarget).get('name').trim();save();render();toast('Профиль сохранён');};
  $('#reminderForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.currentTarget);data.settings.repeatMinutes=Number(f.get('repeatMinutes'));data.settings.repeats=Number(f.get('repeats'));data.settings.allowNoPhoto=f.has('allowNoPhoto');save();render();toast('Настройки напоминаний сохранены');};
@@ -225,6 +269,34 @@ let lastMinute=-1;function tick(){const minute=Math.floor(Date.now()/60000);if(m
 document.addEventListener('click',e=>{if(e.target.closest('[data-action="clear-data"]')){if(confirm('Удалить профиль, лекарства, историю и фото с этого устройства?')){localStorage.removeItem(STORAGE_KEY);data=structuredClone(defaultData);render();toast('Локальные данные удалены');}}});
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();pendingInstall=e;});async function installApp(){if(pendingInstall){pendingInstall.prompt();await pendingInstall.userChoice;pendingInstall=null;}else toast('В меню браузера выберите «Установить приложение» или «Добавить на главный экран»');}
 function openDoseFromUrl(){const id=new URLSearchParams(location.search).get('doseId');if(!id)return;const dose=data.doses.find(item=>item.id===id);if(dose){history.replaceState({},'',location.pathname);pageNav('home');confirmDose(dose);}else if(!firebaseReady||cloudUser)toast('Этот приём не найден в расписании. Обновите список приёмов.');}
-if(firebaseReady) cloudRuntime().then(api=>{if(api.auth)api.onAuthStateChanged(api.auth,async user=>{if(cloudAction){cloudUser=user;return;}cloudUser=user;if(user){try{const remote=await api.readCloudData(user.uid);if(remote){data=remote;localChangesPending=false;saveData(data);ensureDoses();watchAccount(user);}else{data.profile={...data.profile,id:user.uid,email:user.email||''};data.cloudRevision=0;await api.writeCloudData(user.uid,data);saveData(data);watchAccount(user);}}catch{toast('Не удалось загрузить облачные данные; оставлена локальная копия');}}else if(cloudUnsubscribe){cloudUnsubscribe();cloudUnsubscribe=null;}render();openDoseFromUrl();});}).catch(()=>toast('Firebase не удалось загрузить'));
+if(firebaseReady) cloudRuntime().then(api=>{
+ if(!api.auth)throw new Error('Firebase Authentication недоступен.');
+ api.onAuthStateChanged(api.auth,async user=>{
+  if(cloudAction){cloudUser=user;return;}
+  cloudUser=user;
+  if(!user){
+   if(cloudUnsubscribe)cloudUnsubscribe();
+   cloudUnsubscribe=null;
+   if(guestMode){appUnlocked=true;render();return;}
+   showAuthGate();
+   return;
+  }
+  try{
+   const remote=await api.readCloudData(user.uid);
+   if(remote){
+    data=withLocalPhotos(remote);localChangesPending=false;saveData(data);ensureDoses();
+   }else{
+    data.profile={...data.profile,id:user.uid,email:user.email||''};data.cloudRevision=0;
+    await api.writeCloudData(user.uid,data);saveData(data);
+   }
+   appUnlocked=true;watchAccount(user);render();openDoseFromUrl();
+  }catch(error){
+   cloudUser=null;showAuthGate('login',friendlyError(error,'Не удалось загрузить данные аккаунта. Проверьте подключение и правила Firestore.'));
+  }
+ });
+}).catch(error=>showAuthGate('login',friendlyError(error,'Не удалось подключиться к Firebase Authentication.')));
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('/sw.js').catch(()=>{});
-ensureDoses();render();if(!firebaseReady)openDoseFromUrl();tick();
+ensureDoses();
+if(firebaseReady){$('#appRoot').hidden=true;$('#authGate').hidden=false;}
+else {$('#authGate').hidden=true;appUnlocked=true;render();openDoseFromUrl();}
+tick();

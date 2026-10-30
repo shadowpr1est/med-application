@@ -10,19 +10,23 @@
   <title>SmartMed — забота по расписанию</title>
 </head>
 <body>
+  <section id="authGate" class="auth-gate" aria-live="polite">
+    <div class="auth-card"><div class="auth-brand"><img src="/icon.svg" alt=""><span><b>SmartMed</b><small>Забота по расписанию</small></span></div><p>Проверяем сессию…</p></div>
+  </section>
+  <div id="appRoot" hidden>
   <div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="#home"><img class="brand-icon" src="/icon.svg" alt=""><span><b>SmartMed</b><small>Забота по расписанию</small></span></a>
       <div class="side-label">МЕНЮ</div>
       <nav class="side-nav" aria-label="Основная навигация">
-        <button class="nav-item active" data-page="home"><span>⌂</span>Сегодня</button>
+        <button class="nav-item active" data-page="home" aria-current="page"><span>⌂</span>Сегодня</button>
         <button class="nav-item" data-page="history"><span>◷</span>История</button>
         <button class="nav-item" data-page="stats"><span>▥</span>Статистика</button>
         <button class="nav-item" data-page="settings"><span>⚙</span>Настройки</button>
       </nav>
       <div class="sidebar-spacer"></div>
-      <div class="privacy-card"><span>✦</span><b>Ваше здоровье — ваше дело</b><p>Данные хранятся на этом устройстве.</p></div>
-      <button class="profile-shortcut" data-page="settings"><span class="avatar" id="avatarSmall">С</span><span><b id="profileNameSmall">Мой профиль</b><small>Локальный профиль</small></span><span class="more">···</span></button>
+      <div class="privacy-card"><span>✦</span><b>Ваше здоровье — ваше дело</b><p id="privacyDescription">Данные хранятся на этом устройстве.</p></div>
+      <button class="profile-shortcut" data-page="settings"><span class="avatar" id="avatarSmall">П</span><span><b id="profileNameSmall">Мой профиль</b><small id="profileScope">Только на этом устройстве</small></span><span class="more">···</span></button>
     </aside>
     <main class="main-content">
       <header class="topbar"><div class="mobile-brand"><img class="brand-icon" src="/icon.svg" alt=""><b>SmartMed</b></div><div class="topbar-date" id="topDate"></div><button class="icon-button" id="notificationButton" aria-label="Включить уведомления" title="Уведомления">♧<i id="notificationDot"></i></button></header>
@@ -33,7 +37,8 @@
       <section id="page-settings" class="page"></section>
     </main>
   </div>
-  <nav class="mobile-nav" aria-label="Основная навигация"><button class="active" data-page="home"><span>⌂</span>Сегодня</button><button data-page="history"><span>◷</span>История</button><button data-page="stats"><span>▥</span>Статистика</button><button data-page="settings"><span>⚙</span>Настройки</button></nav>
+  <nav class="mobile-nav" aria-label="Основная навигация"><button class="active" data-page="home" aria-current="page"><span>⌂</span>Сегодня</button><button data-page="history"><span>◷</span>История</button><button data-page="stats"><span>▥</span>Статистика</button><button data-page="settings"><span>⚙</span>Настройки</button></nav>
+  </div>
   <div id="modalRoot"></div><div id="toast" class="toast" role="status"></div>
   <script type="module" src="/src/app.js"></script>
 </body>

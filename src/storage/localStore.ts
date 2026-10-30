@@ -5,7 +5,7 @@ export const STORAGE_KEY = 'smartmed.v1';
 
 export const defaultData: AppData = {
   version: 2,
-  profile: { name: 'Саша', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'local' },
+  profile: { name: '', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'local' },
   meds: [],
   doses: [],
   settings: { repeatMinutes: 5, repeats: 2, contactAfter: 10, allowNoPhoto: true, notifications: false },
@@ -27,11 +27,13 @@ export function loadData(): AppData {
       notifications: dose.notifications || {},
       createdAt: dose.createdAt || new Date().toISOString()
     }));
+    const profile = { ...defaultData.profile, ...raw.profile };
+    if (profile.name === 'Саша') profile.name = '';
     return {
       ...defaultData,
       ...raw,
       version: 2,
-      profile: { ...defaultData.profile, ...raw.profile },
+      profile,
       settings: { ...defaultData.settings, ...raw.settings },
       contact: { ...defaultData.contact, ...raw.contact },
       meds: medications,
